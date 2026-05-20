@@ -260,6 +260,205 @@ class CellCommunicationHeavyOpt(object):
                     P_deconv_sparse = coo_from_dense_submat(nzind_S, nzind_D, P_deconv, shape=(self.npts, self.npts))
                     self.comm_network[(i,j)] = P_deconv_sparse
 
+
+def summarize_cluster(X, clusterid, clusternames, n_permutations=500):
+    """Summarize a cell-cell signaling matrix to cluster-cluster level with permutation p-values."""
+    n = len(clusternames)
+    X_cluster = np.empty([n,n], float)
+    p_cluster = np.zeros([n,n], float)
+    for i in range(n):
+        tmp_idx_i = np.where(clusterid==clusternames[i])[0]
+        for j in range(n):
+            tmp_idx_j = np.where(clusterid==clusternames[j])[0]
+            X_cluster[i,j] = X[tmp_idx_i,:][:,tmp_idx_j].mean()
+    for i in range(n_permutations):
+        clusterid_perm = np.random.permutation(clusterid)
+        X_cluster_perm = np.empty([n,n], float)
+        for j in range(n):
+            tmp_idx_j = np.where(clusterid_perm==clusternames[j])[0]
+            for k in range(n):
+                tmp_idx_k = np.where(clusterid_perm==clusternames[k])[0]
+                X_cluster_perm[j,k] = X[tmp_idx_j,:][:,tmp_idx_k].mean()
+        p_cluster[X_cluster_perm >= X_cluster] += 1.0
+    p_cluster = p_cluster / n_permutations
+    df_cluster = pd.DataFrame(data=X_cluster, index=clusternames, columns=clusternames)
+    df_p_value = pd.DataFrame(data=p_cluster, index=clusternames, columns=clusternames)
+    return df_cluster, df_p_value
+
+
+def cluster_center(adata, clustering, method="geometric_mean"):
+    """Compute spatial center position for each cluster."""
+    X = adata.obsm['spatial']
+    cluster_pos = {}
+    clusternames = list( adata.obs[clustering].unique() )
+    clusternames.sort()
+    clusterid = np.array( adata.obs[clustering], str )
+    for name in clusternames:
+        tmp_idx = np.where(clusterid==name)[0]
+        tmp_X = X[tmp_idx]
+        if method == "geometric_mean":
+            X_mean = np.mean(tmp_X, axis=0)
+        elif method == "representative_point":
+            tmp_D = distance_matrix(tmp_X, tmp_X)
+            tmp_D = tmp_D ** 2
+            X_mean = tmp_X[np.argmin(tmp_D.sum(axis=1)),:]
+        cluster_pos[name] = X_mean
+    return cluster_pos
+
+
+class CellCommunication(object):
+    """Original CellCommunication class, used for spatial permutation testing."""
+
+    def __init__(self, adata, df_ligrec, dmat, dis_thr, cost_scale, cost_type,
+                 heteromeric=None, heteromeric_rule='min', heteromeric_delimiter='_'):
+        data_genes = set(adata.var_names)
+        # Pandas compatibility
+        df_ligrec = df_ligrec.copy()
+        df_ligrec.columns = range(df_ligrec.shape[1])
+
+        if not heteromeric:
+            self.ligs = list(set(df_ligrec.iloc[:,0]).intersection(data_genes))
+            self.recs = list(set(df_ligrec.iloc[:,1]).intersection(data_genes))
+            A = np.inf * np.ones([len(self.ligs), len(self.recs)], float)
+            for i in range(len(df_ligrec)):
+                tmp_lig = df_ligrec.iloc[i][0]
+                tmp_rec = df_ligrec.iloc[i][1]
+                if tmp_lig in self.ligs and tmp_rec in self.recs:
+                    if cost_scale is None:
+                        A[self.ligs.index(tmp_lig), self.recs.index(tmp_rec)] = 1.0
+                    else:
+                        A[self.ligs.index(tmp_lig), self.recs.index(tmp_rec)] = cost_scale[(tmp_lig, tmp_rec)]
+            self.A = A
+            lig_expr = adata[:, self.ligs].X
+            if sparse.issparse(lig_expr):
+                self.S = lig_expr.toarray()
+            else:
+                self.S = np.asarray(lig_expr)
+            rec_expr = adata[:, self.recs].X
+            if sparse.issparse(rec_expr):
+                self.D = rec_expr.toarray()
+            else:
+                self.D = np.asarray(rec_expr)
+
+        elif heteromeric:
+            tmp_ligs = list(set(df_ligrec.iloc[:,0]))
+            tmp_recs = list(set(df_ligrec.iloc[:,1]))
+            avail_ligs = []
+            avail_recs = []
+            for tmp_lig in tmp_ligs:
+                lig_genes = set(tmp_lig.split(heteromeric_delimiter))
+                if lig_genes.issubset(data_genes):
+                    avail_ligs.append(tmp_lig)
+            for tmp_rec in tmp_recs:
+                rec_genes = set(tmp_rec.split(heteromeric_delimiter))
+                if rec_genes.issubset(data_genes):
+                    avail_recs.append(tmp_rec)
+            self.ligs = avail_ligs
+            self.recs = avail_recs
+            A = np.inf * np.ones([len(self.ligs), len(self.recs)], float)
+            for i in range(len(df_ligrec)):
+                tmp_lig = df_ligrec.iloc[i,0]
+                tmp_rec = df_ligrec.iloc[i,1]
+                if tmp_lig in self.ligs and tmp_rec in self.recs:
+                    if cost_scale is None:
+                        A[self.ligs.index(tmp_lig), self.recs.index(tmp_rec)] = 1.0
+                    else:
+                        A[self.ligs.index(tmp_lig), self.recs.index(tmp_rec)] = cost_scale[(tmp_lig, tmp_rec)]
+            self.A = A
+            ncell = adata.shape[0]
+            S = np.zeros([ncell, A.shape[0]], float)
+            D = np.zeros([ncell, A.shape[1]], float)
+            for i in range(len(self.ligs)):
+                tmp_lig = self.ligs[i]
+                lig_genes = tmp_lig.split(heteromeric_delimiter)
+                lig_expr = adata[:, lig_genes].X
+                if sparse.issparse(lig_expr):
+                    lig_expr = lig_expr.toarray()
+                else:
+                    lig_expr = np.asarray(lig_expr)
+                if heteromeric_rule == 'min':
+                    S[:,i] = lig_expr.min(axis=1)
+                elif heteromeric_rule == 'ave':
+                    S[:,i] = lig_expr.mean(axis=1)
+            for i in range(len(self.recs)):
+                tmp_rec = self.recs[i]
+                rec_genes = tmp_rec.split(heteromeric_delimiter)
+                rec_expr = adata[:, rec_genes].X
+                if sparse.issparse(rec_expr):
+                    rec_expr = rec_expr.toarray()
+                else:
+                    rec_expr = np.asarray(rec_expr)
+                if heteromeric_rule == 'min':
+                    D[:,i] = rec_expr.min(axis=1)
+                elif heteromeric_rule == 'ave':
+                    D[:,i] = rec_expr.mean(axis=1)
+            self.S = S
+            self.D = D
+
+        if cost_type == 'euc':
+            self.M = dmat
+        elif cost_type == 'euc_square':
+            self.M = dmat ** 2
+        if np.isscalar(dis_thr):
+            if cost_type == 'euc_square':
+                dis_thr = dis_thr ** 2
+            self.cutoff = float(dis_thr) * np.ones_like(A)
+        elif isinstance(dis_thr, dict):
+            self.cutoff = np.zeros_like(A)
+            for i in range(A.shape[0]):
+                for j in range(A.shape[1]):
+                    if A[i,j] > 0:
+                        if cost_type == 'euc_square':
+                            self.cutoff[i,j] = dis_thr[(self.ligs[i], self.recs[j])] ** 2
+                        else:
+                            self.cutoff[i,j] = dis_thr[(self.ligs[i], self.recs[j])]
+        self.nlig = self.S.shape[1]
+        self.nrec = self.D.shape[1]
+        self.npts = adata.shape[0]
+
+    def run_cot_signaling(self, cot_eps_p=1e-1, cot_eps_mu=None, cot_eps_nu=None,
+                          cot_rho=1e1, cot_nitermax=1e4, cot_weights=(0.25,0.25,0.25,0.25),
+                          smooth=False, smth_eta=None, smth_nu=None, smth_kernel=None):
+        if not smooth:
+            self.comm_network = cot_combine_sparse(
+                self.S, self.D, self.A, self.M, self.cutoff,
+                eps_p=cot_eps_p, eps_mu=cot_eps_mu, eps_nu=cot_eps_nu,
+                rho=cot_rho, weights=cot_weights, nitermax=cot_nitermax)
+        else:
+            S_smth = np.zeros_like(self.S)
+            D_smth = np.zeros_like(self.D)
+            for i in range(self.nlig):
+                nzind = np.where(self.S[:,i] > 0)[0]
+                phi = kernel_function(self.M[nzind,:][:,nzind], smth_eta, smth_nu, smth_kernel, normalization='unit_col_sum')
+                S_smth[nzind,i] = np.matmul(phi, self.S[nzind,i].reshape(-1,1))[:,0]
+            for i in range(self.nrec):
+                nzind = np.where(self.D[:,i] > 0)[0]
+                phi = kernel_function(self.M[nzind,:][:,nzind], smth_eta, smth_nu, smth_kernel, normalization='unit_col_sum')
+                D_smth[nzind,i] = np.matmul(phi, self.D[nzind,i].reshape(-1,1))[:,0]
+            P_smth = cot_combine_sparse(S_smth, D_smth, self.A, self.M, self.cutoff,
+                eps_p=cot_eps_p, eps_mu=cot_eps_mu, eps_nu=cot_eps_nu,
+                rho=cot_rho, weights=cot_weights, nitermax=cot_nitermax)
+            self.comm_network = {}
+            for i in range(self.nlig):
+                S = self.S[:,i]
+                nzind_S = np.where(S > 0)[0]
+                phi_S = kernel_function(self.M[nzind_S,:][:,nzind_S], smth_eta, smth_nu, smth_kernel, normalization='unit_col_sum')
+                S_contrib = phi_S * S[nzind_S]
+                S_contrib = S_contrib / np.sum(S_contrib, axis=1, keepdims=True)
+                for j in range(self.nrec):
+                    D = self.D[:,j]
+                    nzind_D = np.where(D > 0)[0]
+                    if np.isinf(self.A[i,j]): continue
+                    P_dense = P_smth[(i,j)].toarray()
+                    P_sub = P_dense[nzind_S,:][:,nzind_D]
+                    phi_D = kernel_function(self.M[nzind_D,:][:,nzind_D], smth_eta, smth_nu, smth_kernel, normalization='unit_col_sum')
+                    D_contrib = phi_D * D[nzind_D]
+                    D_contrib = D_contrib / np.sum(D_contrib, axis=1, keepdims=True)
+                    P_deconv = np.matmul(S_contrib.T, np.matmul(P_sub, D_contrib))
+                    P_deconv_sparse = coo_from_dense_submat(nzind_S, nzind_D, P_deconv, shape=(self.npts, self.npts))
+                    self.comm_network[(i,j)] = P_deconv_sparse
+
+
 def compute_sparse_distance_matrix(coords, dis_thr, cost_type='euc'):
     """
     ⚡⚡ 策略2：计算稀疏距离矩阵（FIXED版本）
