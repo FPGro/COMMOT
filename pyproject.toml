@@ -1,2 +1,76 @@
 [build-system]
-requires = ["setuptools ~= 59.8", "cython ~= 0.29.24", "wheel"]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "commot"
+version = "0.0.4"
+description = "Cell-cell communication inference for spatial transcriptomics data via collective optimal transport."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["cell-cell communication", "spatial transcriptomics", "optimal transport"]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+dependencies = [
+    "anndata>=0.10,<0.13",
+    "joblib>=1.2",
+    "leidenalg>=0.9.0",
+    "networkx>=3.0",
+    "numpy>=1.23",
+    "pandas>=1.5",
+    "plotly>=5.3",
+    "pot>=0.9",
+    "libpysal>=4.7",
+    "igraph>=0.10",
+    "scanpy>=1.9",
+    "scikit-learn>=1.1",
+    "scipy>=1.9",
+]
+
+[project.optional-dependencies]
+downstream = [
+    "karateclub>=1.3",
+    "python-louvain>=0.16",
+]
+tradeSeq = [
+    "anndata2ri>=1.1",
+    "rpy2>=3.5",
+]
+dev = [
+    "pytest>=7.0",
+    "flake8",
+]
+docs = [
+    "sphinx>=5.3",
+    "sphinx-autodoc-typehints",
+    "sphinx-rtd-theme>=1.0",
+    "sphinx-rtd-size",
+    "sphinx-mdinclude",
+    "nbsphinx",
+    "ipykernel",
+    "sphinx-gallery",
+]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USER/COMMOT"
+Documentation = "https://commot.readthedocs.io"
+
+[tool.setuptools.packages.find]
+include = ["commot*"]
+exclude = ["tests*", "docs*", "tutorials*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
