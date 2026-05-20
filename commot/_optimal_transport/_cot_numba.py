@@ -1,9 +1,9 @@
 """
 ⚡⚡⚡ Numba-accelerated functions for COT
-使用Numba JIT编译加速关键循环
+Speeds up critical loops using Numba JIT compilation | 使用Numba JIT编译加速关键循环
 
-预期提升：15-20% (3-4秒on baseline)
-精度：完全一致（Numba保证IEEE 754标准）
+Expected improvement: 15-20% (3-4 seconds on baseline) | 预期提升：15-20% (3-4秒on baseline)
+Precision: Identical (Numba guarantees IEEE 754 standard) | 精度：完全一致（Numba保证IEEE 754标准）
 """
 
 import numpy as np
@@ -11,28 +11,28 @@ from scipy import sparse
 from numba import jit, prange
 import numba
 
-@jit(nopython=True, cache=True, fastmath=False)  # fastmath=False保证精度
+@jit(nopython=True, cache=True, fastmath=False)  # fastmath=False ensures precision | 保证精度
 def coo_submatrix_pull_numba(matr_row, matr_col, matr_data, rows, cols, shape0, shape1):
     """
-    Numba加速版本的coo_submatrix_pull
+    Numba-accelerated version of coo_submatrix_pull | Numba加速版本的coo_submatrix_pull
     
-    速度：比Python版本快10-50倍
-    精度：完全一致（IEEE 754标准）
+    Speed: 10-50x faster than Python version | 速度：比Python版本快10-50倍
+    Precision: Identical (IEEE 754 standard) | 精度：完全一致（IEEE 754标准）
     """
-    # 创建映射数组
+    # Create mapping arrays | 创建映射数组
     gr = -np.ones(shape0, dtype=np.int64)
     gc = -np.ones(shape1, dtype=np.int64)
     
     lr = len(rows)
     lc = len(cols)
     
-    # 建立映射
+    # Build mappings | 建立映射
     for i in range(lr):
         gr[rows[i]] = i
     for i in range(lc):
         gc[cols[i]] = i
     
-    # 找到有效的元素
+    # Find valid elements | 找到有效的元素
     newdata = []
     newrows = []
     newcols = []
@@ -55,7 +55,7 @@ def coo_submatrix_pull_fast(matr, rows, cols):
     if type(matr) != sparse.coo_matrix:
         raise TypeError('Matrix must be sparse COOrdinate format')
     
-    # 调用Numba加速函数
+    # Call Numba-accelerated function | 调用Numba加速函数
     newdata, newrows, newcols, lr, lc = coo_submatrix_pull_numba(
         matr.row, matr.col, matr.data, 
         np.asarray(rows, dtype=np.int64), 
@@ -68,9 +68,9 @@ def coo_submatrix_pull_fast(matr, rows, cols):
 @jit(nopython=True, parallel=True, cache=True, fastmath=False)
 def sparse_matrix_filter_numba(data, row, col, threshold, nrows, ncols):
     """
-    Numba并行过滤稀疏矩阵元素
+    Numba-parallel sparse matrix element filtering | Numba并行过滤稀疏矩阵元素
     
-    用于快速应用距离cutoff
+    Used for fast distance cutoff application | 用于快速应用距离cutoff
     """
     mask = data <= threshold
     filtered_data = data[mask]
@@ -82,10 +82,10 @@ def sparse_matrix_filter_numba(data, row, col, threshold, nrows, ncols):
 @jit(nopython=True, cache=True)
 def compute_heteromeric_min_numba(expr_matrix):
     """
-    Numba加速的heteromeric min计算
+    Numba-accelerated heteromeric min calculation | Numba加速的heteromeric min计算
     
     expr_matrix: (n_cells, n_genes_in_complex)
-    返回: (n_cells,) 每个细胞的最小表达
+    Returns: (n_cells,) minimum expression per cell | 返回: (n_cells,) 每个细胞的最小表达
     """
     n_cells = expr_matrix.shape[0]
     result = np.empty(n_cells, dtype=expr_matrix.dtype)
@@ -98,7 +98,7 @@ def compute_heteromeric_min_numba(expr_matrix):
 @jit(nopython=True, cache=True)
 def compute_heteromeric_mean_numba(expr_matrix):
     """
-    Numba加速的heteromeric mean计算
+    Numba-accelerated heteromeric mean calculation | Numba加速的heteromeric mean计算
     """
     n_cells = expr_matrix.shape[0]
     result = np.empty(n_cells, dtype=expr_matrix.dtype)

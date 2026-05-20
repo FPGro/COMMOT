@@ -574,8 +574,8 @@ def cot_blk_sparse_parallel(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=
     ⚡ PARALLEL version of cot_blk_sparse
     
     Computes each (i,j) L-R pair independently using joblib parallelization
-    Speedup: ~Nx on N-core CPU (理论上接近线性加速)
-    Precision: IDENTICAL to original (完全相同的数学)
+    Speedup: ~Nx on N-core CPU (theoretically near-linear acceleration | 理论上接近线性加速)
+    Precision: IDENTICAL to original (identical mathematics | 完全相同的数学)
     """
     if eps_mu is None: eps_mu = eps_p
     if eps_nu is None: eps_nu = eps_p

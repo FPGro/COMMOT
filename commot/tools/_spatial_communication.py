@@ -38,12 +38,12 @@ def coo_from_dense_submat(row, col, x, shape):
 
 class CellCommunicationHeavyOpt(object):
     """
-    ⚡⚡⚡ 完全优化版本的CellCommunication
+    ⚡⚡⚡ Fully optimized version of CellCommunication | 完全优化版本的CellCommunication
     
-    关键优化：
-    1. 预提取所有基因表达数据（一次性访问anndata）
-    2. 向量化heteromeric计算
-    3. 智能缓存
+    Key optimizations | 关键优化：
+    1. Pre-extracts all gene expression data (single anndata access) | 预提取所有基因表达数据（一次性访问anndata）
+    2. Vectorizes heteromeric calculations | 向量化heteromeric计算
+    3. Intelligent caching | 智能缓存
     """
     
     def __init__(self, adata, df_ligrec, dmat, dis_thr, cost_scale, cost_type,
@@ -55,7 +55,7 @@ class CellCommunicationHeavyOpt(object):
         if df_ligrec is None or len(df_ligrec) == 0:
             raise ValueError("df_ligrec cannot be None or empty")
         
-        # Pandas兼容性
+        # Pandas compatibility | Pandas兼容性
         df_ligrec = df_ligrec.copy()
         df_ligrec.columns = range(df_ligrec.shape[1])
         
@@ -74,7 +74,7 @@ class CellCommunicationHeavyOpt(object):
                     else:
                         A[self.ligs.index(tmp_lig), self.recs.index(tmp_rec)] = cost_scale[(tmp_lig, tmp_rec)]
             self.A = A
-            # ⚡⚡⚡ 关键优化：一次性提取所有配体和受体基因表达
+            # ⚡⚡⚡ Key optimization: Extract all ligand and receptor gene expressions at once | 关键优化：一次性提取所有配体和受体基因表达
             if len(self.ligs) > 0 and len(self.recs) > 0:
                 lig_expr = adata[:, self.ligs].X
                 if sparse.issparse(lig_expr):
@@ -96,11 +96,11 @@ class CellCommunicationHeavyOpt(object):
             tmp_ligs = list(set(df_ligrec.iloc[:,0]))
             tmp_recs = list(set(df_ligrec.iloc[:,1]))
             
-            # 预检查可用的L-R对
+            # Pre-check available L-R pairs | 预检查可用的L-R对
             avail_ligs = []
             avail_recs = []
-            lig_gene_lists = []  # 记录每个配体的基因列表
-            rec_gene_lists = []  # 记录每个受体的基因列表
+            lig_gene_lists = []  # Record gene lists for each ligand | 记录每个配体的基因列表
+            rec_gene_lists = []  # Record gene lists for each receptor | 记录每个受体的基因列表
             
             for tmp_lig in tmp_ligs:
                 lig_genes = tmp_lig.split(heteromeric_delimiter)
@@ -117,7 +117,7 @@ class CellCommunicationHeavyOpt(object):
             self.ligs = avail_ligs
             self.recs = avail_recs
             
-            # 构建A矩阵
+            # Build A matrix | 构建A矩阵
             A = np.inf * np.ones([len(self.ligs), len(self.recs)], float)
             for i in range(len(df_ligrec)):
                 tmp_lig = df_ligrec.iloc[i,0]
@@ -129,7 +129,7 @@ class CellCommunicationHeavyOpt(object):
                         A[self.ligs.index(tmp_lig), self.recs.index(tmp_rec)] = cost_scale[(tmp_lig, tmp_rec)]
             self.A = A
             
-            # ⚡⚡⚡ 关键优化：一次性提取所有需要的基因
+            # ⚡⚡⚡ Key optimization: Extract all required genes at once | 关键优化：一次性提取所有需要的基因
             all_lig_genes = set()
             all_rec_genes = set()
             for genes in lig_gene_lists:
@@ -142,7 +142,7 @@ class CellCommunicationHeavyOpt(object):
             
             print(f"    → Extracting {len(all_lig_genes)} ligand genes + {len(all_rec_genes)} receptor genes...")
             
-            # ⚡ 一次性提取（而非1194次）
+            # ⚡ Single extraction (instead of 1194 times) | 一次性提取（而非1194次）
             ncell = adata.shape[0]
             if len(all_lig_genes) > 0:
                 lig_expr_all = adata[:, all_lig_genes].X
@@ -162,7 +162,7 @@ class CellCommunicationHeavyOpt(object):
             
             print(f"    → Computing {len(self.ligs)} ligand + {len(self.recs)} receptor expressions...")
             
-            # ⚡ 向量化计算heteromeric表达
+            # ⚡ Vectorized heteromeric expression calculation | 向量化计算heteromeric表达
             S = np.zeros([ncell, len(self.ligs)], float)
             D = np.zeros([ncell, len(self.recs)], float)
             
@@ -184,7 +184,7 @@ class CellCommunicationHeavyOpt(object):
             self.D = D
             print(f"    ✅ Gene expression pre-extraction completed!")
         
-        # 设置cost矩阵
+        # Set cost matrix | 设置cost矩阵
         if cost_type == 'euc':
             self.M = dmat
         elif cost_type == 'euc_square':
@@ -461,14 +461,14 @@ class CellCommunication(object):
 
 def compute_sparse_distance_matrix(coords, dis_thr, cost_type='euc'):
     """
-    ⚡⚡ 策略2：计算稀疏距离矩阵（FIXED版本）
+    ⚡⚡ Strategy 2: Compute sparse distance matrix (FIXED version) | 策略2：计算稀疏距离矩阵（FIXED版本）
     
-    只计算距离<dis_thr的点对，大幅减少计算量
+    Only computes point pairs with distance < dis_thr, greatly reducing computation | 只计算距离<dis_thr的点对，大幅减少计算量
     
-    优化：
-    1. 使用预分配数组代替列表append
-    2. 直接使用radius_neighbors_graph（更快）
-    3. 避免不必要的dense转换
+    Optimizations | 优化：
+    1. Use pre-allocated arrays instead of list append | 使用预分配数组代替列表append
+    2. Use radius_neighbors_graph directly (faster) | 直接使用radius_neighbors_graph（更快）
+    3. Avoid unnecessary dense conversion | 避免不必要的dense转换
     """
     if coords.shape[0] == 0:
         raise ValueError("coords cannot be empty")
@@ -477,31 +477,31 @@ def compute_sparse_distance_matrix(coords, dis_thr, cost_type='euc'):
     
     n = coords.shape[0]
     
-    # 方法1: 直接使用radius_neighbors_graph（推荐）
+    # Method 1: Use radius_neighbors_graph directly (recommended) | 直接使用radius_neighbors_graph（推荐）
     from sklearn.neighbors import radius_neighbors_graph
     
     try:
-        # 使用radius_neighbors_graph直接构建稀疏矩阵
+        # Use radius_neighbors_graph to build sparse matrix directly | 使用radius_neighbors_graph直接构建稀疏矩阵
         dmat_sparse = radius_neighbors_graph(
             coords, 
             radius=dis_thr, 
             mode='distance',
             metric='euclidean',
-            include_self=True  # 包含自己（距离=0）
+            include_self=True  # Include self (distance=0) | 包含自己（距离=0）
         )
         
-        # 如果需要平方距离
+        # If squared distance is needed | 如果需要平方距离
         if cost_type == 'euc_square':
             dmat_sparse.data = dmat_sparse.data ** 2
         
-        # 转为dense（后续代码需要）
-        # 注意：这里仍然转dense是因为COT算法需要dense格式
-        # 未来可以优化COT算法以支持稀疏输入
+        # Convert to dense (required by subsequent code) | 转为dense（后续代码需要）
+        # Note: Still converting to dense because COT algorithm requires dense format | 注意：这里仍然转dense是因为COT算法需要dense格式
+        # Future optimization: COT algorithm can support sparse input | 未来可以优化COT算法以支持稀疏输入
         dmat_dense = np.full((n, n), np.inf, dtype=float)
         dmat_coo = dmat_sparse.tocoo()
         dmat_dense[dmat_coo.row, dmat_coo.col] = dmat_coo.data
         
-        # 确保对角线为0（距离自己到自己）
+        # Ensure diagonal is 0 (distance to self) | 确保对角线为0（距离自己到自己）
         np.fill_diagonal(dmat_dense, 0)
         
         nnz_pct = (dmat_sparse.nnz / (n*n)) * 100
@@ -513,7 +513,7 @@ def compute_sparse_distance_matrix(coords, dis_thr, cost_type='euc'):
     except Exception as e:
         print(f"    ⚠️  Sparse distance computation failed: {e}")
         print(f"    → Falling back to full distance matrix")
-        # Fallback到完整距离矩阵
+        # Fallback to full distance matrix | Fallback到完整距离矩阵
         dmat_dense = distance_matrix(coords, coords)
         if cost_type == 'euc_square':
             dmat_dense = dmat_dense ** 2
@@ -540,7 +540,7 @@ def spatial_communication(
     smth_eta: float = None,
     smth_nu: float = None,
     smth_kernel: str = 'exp',
-    n_jobs: int = -1,  # ⚡ 新增：并行化（默认使用所有核心）
+    n_jobs: int = -1,  # ⚡ New: parallelization (uses all cores by default) | 新增：并行化（默认使用所有核心）
     copy: bool = False
 ):
     """
@@ -564,9 +564,9 @@ def spatial_communication(
     assert database_name is not None, "Please give a database_name"
     assert df_ligrec is not None, "Please give a ligand-receptor database"
     
-    # ⚡ 计算距离矩阵（优化版）
+    # ⚡ Compute distance matrix (optimized version) | 计算距离矩阵（优化版）
     if not 'spatial_distance' in adata.obsp.keys():
-        # 使用优化的稀疏距离矩阵（如果dis_thr较小）
+        # Use optimized sparse distance matrix (if dis_thr is small) | 使用优化的稀疏距离矩阵（如果dis_thr较小）
         if dis_thr is not None and dis_thr < 1000:
             dis_mat = compute_sparse_distance_matrix(adata.obsm["spatial"], dis_thr, cost_type)
         else:
@@ -574,7 +574,7 @@ def spatial_communication(
     else:
         dis_mat = adata.obsp['spatial_distance']
     
-    # 过滤L-R database
+    # Filter L-R database
     if not heteromeric:
         data_genes = list(adata.var_names)
         tmp_ligrec = []
@@ -598,7 +598,7 @@ def spatial_communication(
     
     df_ligrec = df_ligrec.drop_duplicates()
     
-    # ⚡ 使用优化的CellCommunication类（预提取基因表达）
+    # ⚡ Use optimized CellCommunication class (pre-extracted gene expression) | 使用优化的CellCommunication类（预提取基因表达）
     model = CellCommunicationHeavyOpt(adata,
         df_ligrec,
         dis_mat,
@@ -621,10 +621,10 @@ def spatial_communication(
         smth_nu = smth_nu,
         smth_kernel = smth_kernel,
         n_jobs = n_jobs,
-        verbose = False  # 保持安静，除非用户需要
+        verbose = False  # Keep quiet unless user needs
     )
     
-    # 保存结果（与原版相同）
+    # Save results (same as original version) | 保存结果（与原版相同）
     adata.uns['commot-'+database_name+'-info'] = {}
     df_ligrec_write = pd.DataFrame(data=df_ligrec.values, columns=['ligand','receptor','pathway'])
     adata.uns['commot-'+database_name+'-info']['df_ligrec'] = df_ligrec_write
