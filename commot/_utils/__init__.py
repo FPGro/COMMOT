@@ -18,3 +18,4 @@ from ._plotting import plot_cell_signaling_compare
 from ._plotting import get_cmap_qualitative
 from ._clustering import leiden_clustering
 from ._binarization import binarize_sparse_matrix
+from ._array_utils import to_dense

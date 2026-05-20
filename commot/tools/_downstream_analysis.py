@@ -28,6 +28,7 @@ from .._utils import leiden_clustering
 from .._utils import moranI_vector_global
 from .._utils import preprocess_vector_field
 from .._utils import binarize_sparse_matrix
+from .._utils import to_dense
 
 def communication_deg_detection(
     adata: anndata.AnnData,
@@ -331,7 +332,7 @@ def communication_impact(
     Ds_exps = []
     Ds_exp_total = np.zeros([ncell], float)
     for i in range(len(ds_genes)):
-        Ds_exp = np.array(adata_all[:,ds_genes[i]].X.toarray()).reshape(-1)
+        Ds_exp = to_dense(adata_all[:, ds_genes[i]].X).reshape(-1)
         Ds_exps.append(Ds_exp)
         col_names.append(ds_genes[i])
         Ds_exp_total += Ds_exp
@@ -412,7 +413,7 @@ def communication_impact(
             exclude_lr_genes = set(all_lr_genes)
             exclude_genes = list(exclude_lr_genes.union(exclude_ds_genes))
             use_genes = list( set(bg_genes) - set(exclude_genes) )
-            bg_mat = np.array( adata_bg[:,use_genes].X.toarray() )
+            bg_mat = to_dense(adata_bg[:, use_genes].X)
             sum_mat = np.concatenate((adata.obsm['commot-'+database_name+'-sum-sender'][row_names_sender].values, \
                 adata.obsm['commot-'+database_name+'-sum-receiver'][row_names_receiver].values), axis=1)
             r = treebased_score_multifeature(sum_mat, Ds_exps[j], bg_mat,
@@ -427,7 +428,7 @@ def communication_impact(
 
                 exclude_genes = list(exclude_lr_genes.union(exclude_ds_genes))
                 use_genes = list( set(bg_genes) - set(exclude_genes) )
-                bg_mat = np.array( adata_bg[:,use_genes].X.toarray() )
+                bg_mat = to_dense(adata_bg[:, use_genes].X)
                 if row_name[0] == 's':
                     sum_vec = adata.obsm['commot-'+database_name+'-sum-sender'][row_name].values.reshape(-1,1)
                 elif row_name[0] == 'r':

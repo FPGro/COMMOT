@@ -10,6 +10,7 @@ from .._optimal_transport import cot_sparse
 from .._optimal_transport import cot_combine_sparse
 from .._optimal_transport import uot
 from .._optimal_transport import usot
+from .._utils import to_dense
 
 def pairwise_scc(X1, X2):
     X1 = X1.argsort(axis=1).argsort(axis=1)
@@ -99,7 +100,7 @@ def infer_spatial_information(
         common_genes = list(set(adata_sc.var_names).intersection(set(adata_sp.var_names)))
         adata_sc_common = adata_sc[:, common_genes]
         adata_sp_common = adata_sp[:, common_genes]
-        cor_sc_sp = pairwise_scc(np.array(adata_sc_common.X.toarray()), np.array(adata_sp_common.X.toarray()))
+        cor_sc_sp = pairwise_scc(to_dense(adata_sc_common.X), to_dense(adata_sp_common.X))
         cost_sc_sp = 0.5 * ( 1.0 - cor_sc_sp )
     if cost_sc is None and ot_alpha != 0.0:
         adata_sc_processed = adata_sc.copy()
@@ -137,10 +138,10 @@ def infer_spatial_information(
         tmp_gamma_sp = gamma_sp - tmp_quantile
         gamma_sp[np.where(tmp_gamma_sp < 0)] = 0
     gamma_sp = gamma_sp / gamma_sp.sum(axis=0)
-    if isinstance(adata_sc.X, np.ndarray):
-        X_sp_pred = np.matmul(gamma_sp.T, np.array(adata_sc.X))
-    elif isinstance(adata_sc.X, sparse.csr_matrix):
-        X_sp_pred = sparse.csr_matrix( gamma_sp.T * adata_sc.X )
+    if sparse.issparse(adata_sc.X):
+        X_sp_pred = sparse.csr_matrix(gamma_sp.T @ adata_sc.X)
+    else:
+        X_sp_pred = np.matmul(gamma_sp.T, np.asarray(adata_sc.X))
     adata_sp_pred = anndata.AnnData(X=X_sp_pred, var=pd.DataFrame(index=adata_sc.var_names))
     adata_sp_pred.obsm["spatial"] = adata_sp.obsm["spatial"]
 

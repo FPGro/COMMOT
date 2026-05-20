@@ -266,11 +266,11 @@ def unot_sinkhorn_l2_sparse(a,b,C,eps,m,nitermax=10000,stopthr=1e-8,verbose=Fals
         # Iteration
         tmp_K.data = np.exp( ( -C.data + f[C.row] + g[C.col] ) / eps )
         f = eps * np.log(a) \
-            - eps * np.log( np.sum( tmp_K, axis=1 ).A.reshape(-1) \
+            - eps * np.log( np.array(tmp_K.sum(axis=1)).ravel() \
             + np.exp( ( r + f ) / eps ) ) + f
         tmp_K.data = np.exp( ( -C.data + f[C.row] + g[C.col] ) / eps )
         g = eps * np.log(b) \
-            - eps * np.log( np.sum( tmp_K, axis=0 ).A.reshape(-1) \
+            - eps * np.log( np.array(tmp_K.sum(axis=0)).ravel() \
             + np.exp( ( s + g ) / eps ) ) + g
         r = - eps * wrightomega( f/eps - np.log( eps/m ) ).real
         s = - eps * wrightomega( g/eps - np.log( eps/m ) ).real
