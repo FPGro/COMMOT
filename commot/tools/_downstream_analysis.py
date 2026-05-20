@@ -663,7 +663,7 @@ def group_cell_communication(
             A_signal_bin_sym.data[:] = 1
             A = A_spatial + A_signal_bin_sym
             gw = karateclub.GraphWave(**kw_graphwave)
-            G = nx.from_scipy_sparse_matrix(A)
+            G = nx.from_scipy_sparse_array(A)
             gw.fit(G)
             R = gw.get_embedding()
             heat_mats.append(R)
