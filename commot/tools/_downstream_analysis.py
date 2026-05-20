@@ -15,7 +15,7 @@ from scipy.stats import spearmanr, pearsonr
 from sklearn.preprocessing import normalize
 from sklearn.neighbors import kneighbors_graph
 from sklearn.decomposition import PCA
-import karateclub
+# import karateclub # import made lazy
 
 from .._utils import partial_corr
 from .._utils import semipartial_corr
@@ -641,6 +641,14 @@ def group_cell_communication(
 
     """
     
+    try:
+        import karateclub
+    except ImportError:
+        raise ImportError(
+            "karateclub is required for group_cell_communication. "
+            "Install it with: pip install commot[downstream]"
+        )
+
     nkey = len(keys)
     ncell = adata.shape[0]
 
