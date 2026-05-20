@@ -702,8 +702,8 @@ def plot_cluster_communication_dotplot(
             pathways = pathway_name
         df_ligrec = adata.uns['commot-%s-info' % database_name]['df_ligrec']
         for i in range(df_ligrec.shape[0]):
-            if df_ligrec.iloc[i][2] in pathways:
-                keys.append(df_ligrec.iloc[i][0]+'-'+df_ligrec.iloc[i][1])
+            if df_ligrec.iloc[i, 2] in pathways:
+                keys.append(df_ligrec.iloc[i, 0]+'-'+df_ligrec.iloc[i, 1])
         keys.extend( pathways )
     
     X_tmp = adata.uns['commot_cluster-'+clustering+'-'+database_name+'-'+keys[0]]['communication_matrix'].copy()
