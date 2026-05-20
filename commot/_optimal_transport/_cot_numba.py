@@ -108,4 +108,3 @@ def compute_heteromeric_mean_numba(expr_matrix):
     
     return result
 
-print("✅ Numba-accelerated COT functions loaded")
