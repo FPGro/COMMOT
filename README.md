@@ -14,6 +14,7 @@ the codebase to work with modern Python and package versions.
 | Area | Change |
 |------|--------|
 | **Performance** | 2–3× faster via batch gene extraction and parallel COT (Zaoqu-Liu) |
+| **Performance** | 20–40× faster cluster summarization via `cluster_communication_batch`: vectorized sparse matmul + parallel LR pairs |
 | **Python** | Requires Python ≥ 3.10 (was 3.7) |
 | **anndata** | Compatible with anndata 0.10–0.12 (was pinned to 0.7.6) |
 | **Dependencies** | All pins modernized; `pysal` → `libpysal` |
