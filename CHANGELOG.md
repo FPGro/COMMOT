@@ -1,5 +1,47 @@
 # Changelog
 
+## [Unreleased] – Parallel COT row/col
+
+### Performance (spatial_communication — Stage 1)
+- **`cot_row_sparse_parallel`**: parallelizes the loop over sender species
+  (ligands) using process-based parallelism (joblib loky backend).
+- **`cot_col_sparse_parallel`**: parallelizes the loop over receiver species
+  (receptors) using process-based parallelism.
+- **`cot_blk_sparse_parallel`**: parallelizes the loop over individual
+  (ligand, receptor) pairs using process-based parallelism.
+- `cot_combine_sparse` runs the four COT variants sequentially, with
+  `cot_row`, `cot_col`, and `cot_blk` each using the full process budget
+  internally.
+
+#### Measured performance (2176 cells, 395 LR pairs, 163 ligands, 132 receptors):
+
+| Phase | Time (32 cores) | % of total |
+|-------|----------------|------------|
+| `cot_sparse` (sequential) | 539s | 82% |
+| `cot_row_parallel` | 69s | 11% |
+| `cot_col_parallel` | 23s | 3% |
+| `cot_blk_parallel` | 25s | 4% |
+
+Overall Stage 1 improvement: ~13–17% reduction vs fully sequential.
+The bottleneck is `cot_sparse` which solves one large combined OT problem
+and is inherently sequential. Users needing faster Stage 1 can adjust
+`cot_weights=(0.0, 0.33, 0.33, 0.34)` to skip `cot_sparse` entirely.
+
+### API
+- No changes to public API. The `n_jobs` parameter on
+  `spatial_communication` (and internally on `cot_combine_sparse`) now
+  controls both inner-variant parallelism and cross-variant concurrency.
+- Original sequential functions (`cot_row_sparse`, `cot_col_sparse`,
+  `cot_blk_sparse`) remain available and unchanged for backward
+  compatibility and testing.
+
+### Files changed
+- `commot/_optimal_transport/_cot.py`: added `cot_row_sparse_parallel`,
+  `cot_col_sparse_parallel`, `cot_blk_sparse_parallel`; rewrote
+  `cot_combine_sparse` with sequential variant execution and per-variant
+  process parallelism.
+- `commot/_optimal_transport/__init__.py`: exports new parallel functions.
+
 ## [Unreleased] – Parallel cluster communication
 
 ### New features
@@ -20,8 +62,10 @@
 - **Vectorization gain**: sparse matmul computes all cluster-pair
   means in one operation per permutation, replacing O(n_clusters²) Python
   loop iterations with indexing overhead.
-- **Memory**: threads share `adata.obsp` — no duplication of the large
-  cell×cell communication matrices.
+- **Sequential variant execution** in `cot_combine_sparse`: concurrent
+  execution via ThreadPoolExecutor was tested but caused GIL thrashing
+  (performance degraded with more threads). Sequential execution with
+  per-variant process parallelism is simpler and faster.
 
 ### API
 - `cluster_communication_batch` writes results to `adata.uns` in the same
