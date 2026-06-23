@@ -5,21 +5,21 @@
 ### New features
 - **`cluster_communication_batch`**: new function for summarizing cell-cell
   communication to cluster level across many LR pairs in parallel
-  (`ct.tl.cluster_communication_batch`). Processes all pairs concurrently
-  using joblib threading backend and replaces nested Python loops with
-  sparse matrix multiplication (`indicator @ X @ indicator.T`).
-  Typical speedup: 20–40× compared to serial
+  (`ct.tl.cluster_communication_batch`). Processes all pairs sequentially 
+  and replaces nested Python loops with sparse matrix 
+  multiplication (`indicator @ X @ indicator.T`).
+  Typical speedup: 20–40× compared to old
   `ct.tl.cluster_communication` in a loop.
+- Same optimization applied to `ct.tl.cluster_communication`, so
+  both are fast now
 - Added internal helpers `_build_cluster_indicator` and
   `_summarize_cluster_sparse` for vectorized cluster-level aggregation
   with permutation testing.
 
 ### Performance characteristics
-- **Vectorization gain** (~3–5×): sparse matmul computes all cluster-pair
+- **Vectorization gain**: sparse matmul computes all cluster-pair
   means in one operation per permutation, replacing O(n_clusters²) Python
   loop iterations with indexing overhead.
-- **Parallelism gain** (~N× on N cores): LR pairs are independent; uses
-  `joblib` threading backend since scipy sparse matmul releases the GIL.
 - **Memory**: threads share `adata.obsp` — no duplication of the large
   cell×cell communication matrices.
 

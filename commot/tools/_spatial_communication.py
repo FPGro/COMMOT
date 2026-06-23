@@ -1232,7 +1232,8 @@ def _summarize_cluster_sparse(X, indicator, indicator_T, cluster_sizes,
 
     Uses indicator @ X @ indicator.T to compute all cluster-pair means in one
     operation, replacing nested Python loops. The permutation test permutes the
-    indicator columns (equivalent to relabeling cells).
+    indicator columns (equivalent to relabeling cells), applying the same
+    permutation to both sender and receiver sides.
 
     Parameters
     ----------
@@ -1241,7 +1242,7 @@ def _summarize_cluster_sparse(X, indicator, indicator_T, cluster_sizes,
     indicator : sparse matrix (n_clusters, n_cells)
         Binary indicator matrix mapping cells to clusters.
     indicator_T : sparse matrix (n_cells, n_clusters)
-        Transpose of indicator (pre-computed for efficiency).
+        Transpose of indicator (pre-computed for the observed statistic).
     cluster_sizes : np.ndarray (n_clusters,)
         Number of cells per cluster.
     n_permutations : int
@@ -1271,7 +1272,8 @@ def _summarize_cluster_sparse(X, indicator, indicator_T, cluster_sizes,
     IX = indicator @ X  # (n_clusters x n_cells), sparse
     X_cluster = np.asarray((IX @ indicator_T).todense()) / size_outer
 
-    # Permutation test
+    # Permutation test: permute cell labels, apply SAME permutation to
+    # both sender (row) and receiver (column) sides.
     rng = np.random.default_rng(rng_seed)
     p_cluster = np.zeros((n_clusters, n_clusters), dtype=np.float64)
     n_cells = indicator.shape[1]
@@ -1281,7 +1283,9 @@ def _summarize_cluster_sparse(X, indicator, indicator_T, cluster_sizes,
         # Permute columns = reassign cells to clusters randomly
         indicator_perm = indicator[:, perm]
         IX_perm = indicator_perm @ X  # (n_clusters x n_cells)
-        X_perm = np.asarray((IX_perm @ indicator_T).todense()) / size_outer
+        # Use indicator_perm.T (not indicator_T!) so both sides are permuted
+        indicator_perm_T = indicator_perm.T.tocsc()
+        X_perm = np.asarray((IX_perm @ indicator_perm_T).todense()) / size_outer
         p_cluster += (X_perm >= X_cluster).astype(np.float64)
 
     p_cluster /= n_permutations
@@ -1294,17 +1298,17 @@ def cluster_communication_batch(
     clustering: str = None,
     n_permutations: int = 100,
     random_seed: int = 1,
-    n_jobs: int = -1,
     verbose: bool = True,
     copy: bool = False
 ):
     """
     Summarize cell-cell communication to cluster-cluster level for multiple
-    LR pairs in parallel using vectorized sparse matrix operations.
+    LR pairs using vectorized sparse matrix operations.
 
     This is a batch version of :func:`cluster_communication` that processes
-    many LR pairs concurrently. For large numbers of pairs (>50), this is
-    significantly faster than calling cluster_communication in a loop.
+    many LR pairs efficiently by pre-computing shared indicator matrices once
+    and reusing them across all pairs. Uses sparse matmul (indicator @ X @
+    indicator.T) instead of nested Python loops for each pair.
 
     Parameters
     ----------
@@ -1325,9 +1329,6 @@ def cluster_communication_batch(
     random_seed
         Base random seed. Each LR pair gets a unique derived seed for
         reproducibility.
-    n_jobs : int, default=-1
-        Number of parallel threads. -1 uses all available cores.
-        Uses threading backend (scipy sparse matmul releases GIL).
     verbose
         Whether to print progress information.
     copy
@@ -1351,18 +1352,17 @@ def cluster_communication_batch(
     ...            if k.startswith(prefix) and k != 'commot-cellchat-total-total']
     >>> ct.tl.cluster_communication_batch(
     ...     adata, database_name='cellchat', lr_pairs=lr_pairs,
-    ...     clustering='leiden', n_permutations=100, n_jobs=8)
+    ...     clustering='leiden', n_permutations=100)
 
     Notes
     -----
     Performance characteristics:
-    - ~8x faster than serial loop from thread parallelism (8 cores)
-    - ~3-5x faster from vectorized sparse matmul vs nested Python loops
-    - Combined: ~20-40x faster for typical use cases
-    - Memory: shares adata.obsp across threads (no duplication)
+    - Uses sparse matmul to compute all cluster-pair means in one operation per
+      permutation, replacing O(n_clusters^2) Python loop iterations
+    - Pre-computes indicator matrices once, reuses across all LR pairs
+    - Memory efficient: operates directly on sparse obsp matrices without
+      dense conversion
     """
-    import os
-
     assert database_name is not None, "Please specify database_name."
     assert clustering is not None, "Please specify clustering."
 
@@ -1379,7 +1379,7 @@ def cluster_communication_batch(
             print("No LR pairs found to summarize.")
         return adata if copy else None
 
-    # Pre-compute shared structures
+    # Pre-compute shared structures (computed once, reused for all pairs)
     celltypes = sorted([str(x) for x in adata.obs[clustering].unique()])
     clusterid = np.array(adata.obs[clustering], dtype=str)
     n_clusters = len(celltypes)
@@ -1393,18 +1393,27 @@ def cluster_communication_batch(
         print(f"  Clusters: {n_clusters}")
         print(f"  Cells: {adata.shape[0]}")
         print(f"  Permutations: {n_permutations}")
-        n_cores = n_jobs if n_jobs > 0 else os.cpu_count()
-        print(f"  Parallel workers: {n_cores}")
 
-    # Worker function
+    # Process all LR pairs serially — vectorized internals are fast enough
+    # that threading overhead and GIL contention would slow things down.
     prefix = f"commot-{database_name}-"
+    n_failed = 0
 
-    def _process_pair(idx, lr_name):
+    for idx, lr_name in enumerate(lr_pairs):
         obsp_key = f"{prefix}{lr_name}"
         if obsp_key not in adata.obsp:
-            return (lr_name, None, None, f"Key '{obsp_key}' not in obsp")
+            n_failed += 1
+            continue
 
         X = adata.obsp[obsp_key]
+
+        # Ensure CSR format for efficient sparse matmul
+        if not sparse.issparse(X):
+            X = sparse.csr_matrix(X)
+        elif not sparse.isspmatrix_csr(X):
+            X = X.tocsr()
+
+        # Unique seed per pair for reproducibility
         rng_seed = random_seed + idx
 
         try:
@@ -1412,27 +1421,9 @@ def cluster_communication_batch(
                 X, indicator, indicator_T,
                 cluster_sizes, n_permutations, rng_seed
             )
-            return (lr_name, X_cluster, p_cluster)
         except Exception as e:
-            return (lr_name, None, None, str(e))
-
-    # Run in parallel (threading: scipy sparse matmul releases GIL)
-    results = Parallel(n_jobs=n_jobs, backend='threading', verbose=0)(
-        delayed(_process_pair)(idx, lr_name)
-        for idx, lr_name in enumerate(lr_pairs)
-    )
-
-    # Write results to adata.uns
-    n_failed = 0
-    for result in results:
-        if len(result) == 4:
-            # Failed
-            _, _, _, err = result
-            n_failed += 1
-            continue
-
-        lr_name, X_cluster, p_cluster = result
-        if X_cluster is None:
+            if verbose and n_failed == 0:
+                print(f"  Warning: first failure at {lr_name}: {e}")
             n_failed += 1
             continue
 
